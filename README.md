@@ -1,5 +1,7 @@
 # BedSplit Lite — free Blender add-on to split a model for 3D printing and fit the printer bed
 
+Website: https://mendboxstudio.com/addons/bedsplit · Full manual: https://mendboxstudio.com/docs/bedsplit
+
 [![Blender 4.2+](https://img.shields.io/badge/Blender-4.2%2B-orange)](https://github.com/mendbox/bedsplit-lite/releases/latest)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/mendbox/bedsplit-lite)](https://github.com/mendbox/bedsplit-lite/releases/latest)
