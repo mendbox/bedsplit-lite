@@ -1,14 +1,14 @@
 # BedSplit Lite — free Blender add-on to split a model for 3D printing and fit the printer bed
 
-[![Blender 4.2+](https://img.shields.io/badge/Blender-4.2%2B-orange)](https://github.com/quadfix-tools/bedsplit-lite/releases/latest)
+[![Blender 4.2+](https://img.shields.io/badge/Blender-4.2%2B-orange)](https://github.com/mendbox/bedsplit-lite/releases/latest)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
-[![Latest release](https://img.shields.io/github/v/release/quadfix-tools/bedsplit-lite)](https://github.com/quadfix-tools/bedsplit-lite/releases/latest)
+[![Latest release](https://img.shields.io/github/v/release/mendbox/bedsplit-lite)](https://github.com/mendbox/bedsplit-lite/releases/latest)
 
 **Full version — dowels and sockets in every joint, mesh repair for broken scans and AI meshes, Find Cuts, movable cut planes with live preview, plus everything in Lite → [Gumroad](https://quadfix.gumroad.com/l/bedsplit) | [Superhive](https://superhivemarket.com/products/bedsplit)**
 
 BedSplit Lite is a free, open-source Blender add-on that splits a model for 3D printing so that every part fits your printer bed. Pick your printer (Bambu Lab, Prusa, Creality, Anycubic, Elegoo, Sovol, Voron) or type a bed size, press **Split to Bed**, get flat-cut, closed parts laid out next to the model, and export one STL per part. For Blender 4.2 LTS, 4.5 LTS and 5.x.
 
-[Download the latest release](https://github.com/quadfix-tools/bedsplit-lite/releases/latest) · [Trailer of the full version on YouTube](https://youtu.be/-EbloCRxfUs)
+[Download the latest release](https://github.com/mendbox/bedsplit-lite/releases/latest) · [Trailer of the full version on YouTube](https://youtu.be/-EbloCRxfUs)
 
 ![Blender split model for 3D printing: a 600 mm model cut into parts that fit a 220 mm printer bed](docs/media/bedsplit-split.gif)
 *One click: the model is cut into parts that fit the bed. (This clip is from the full version, which also adds dowel sockets at the joints. Lite makes the same cuts without sockets.)*
@@ -61,7 +61,7 @@ These need the full version, they are not in Lite.
 
 ## Install (Blender 4.2 and newer)
 
-1. Download the zip from the [Releases](https://github.com/quadfix-tools/bedsplit-lite/releases/latest) page. **Do not unzip it.**
+1. Download the zip from the [Releases](https://github.com/mendbox/bedsplit-lite/releases/latest) page. **Do not unzip it.**
 2. In Blender open **Edit > Preferences > Get Extensions**, click the small arrow menu at the top right and choose **Install from Disk**, then pick the zip.
 3. In the 3D viewport select your model in Object Mode, press `N` and open the **BedSplit Lite** tab.
 
