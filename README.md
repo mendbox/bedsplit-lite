@@ -4,7 +4,7 @@
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/quadfix-tools/bedsplit-lite)](https://github.com/quadfix-tools/bedsplit-lite/releases/latest)
 
-**Full version with dowels and sockets, mesh repair and movable cuts → [Gumroad](https://quadfix.gumroad.com/l/bedsplit) | [Superhive](https://superhivemarket.com/products/bedsplit)**
+**Full version — dowels and sockets in every joint, mesh repair for broken scans and AI meshes, Find Cuts, movable cut planes with live preview, plus everything in Lite → [Gumroad](https://quadfix.gumroad.com/l/bedsplit) | [Superhive](https://superhivemarket.com/products/bedsplit)**
 
 BedSplit Lite is a free, open-source Blender add-on that splits a model for 3D printing so that every part fits your printer bed. Pick your printer (Bambu Lab, Prusa, Creality, Anycubic, Elegoo, Sovol, Voron) or type a bed size, press **Split to Bed**, get flat-cut, closed parts laid out next to the model, and export one STL per part. For Blender 4.2 LTS, 4.5 LTS and 5.x.
 
