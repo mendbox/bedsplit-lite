@@ -125,7 +125,7 @@ No. Pure Python with Blender's own `bmesh`, no internet access, no dependencies.
 
 ## License
 
-GPL-3.0-or-later, see [LICENSE](LICENSE). Support: support@dynamicflower.pt
+GPL-3.0-or-later, see [LICENSE](LICENSE). Support: support@mendboxstudio.com
 
 ---
 *Keywords: Blender add-on, Blender extension, split model for 3d printing, split stl to fit printer bed, cut model into parts for 3d printing, 3D printing large models, print bed size, Bambu Lab, Prusa, Creality Ender 3, Anycubic, Elegoo, cosplay 3D printing, STL export, model splitter.*
