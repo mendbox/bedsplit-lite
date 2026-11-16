@@ -1,0 +1,18 @@
+schema_version = "1.0.0"
+id = "bedsplit_lite"
+version = "1.0.0"
+name = "BedSplit Lite - Split Models to Fit the 3D Printer Bed"
+tagline = "Split a model to the printer bed, flat cuts, STL per part"
+maintainer = "QuadFix Tools"
+type = "add-on"
+website = "https://github.com/quadfix-tools/bedsplit-lite"
+tags = ["Mesh", "3D View", "Import-Export"]
+blender_version_min = "4.2.0"
+license = ["SPDX:GPL-3.0-or-later"]
+copyright = ["2026 QuadFix Tools"]
+
+[permissions]
+files = "Export the split parts as STL files"
+
+[build]
+paths_exclude_pattern = ["__pycache__/", "*.pyc", ".*"]
