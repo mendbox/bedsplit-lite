@@ -96,9 +96,9 @@ check("register twice, settings on the scene", p is not None and p.printer == "C
 check("no dowel / cut-plane settings", not any(hasattr(p, a) for a in ("peg_diameter", "clearance", "planes", "max_per_joint")))
 check("no preview / cut operators", not any(hasattr(bpy.types, "BEDSPLITLITE_OT_" + n) for n in ("preview", "plane_add", "plane_remove")))
 check("no dowel / repair code in core", not any(hasattr(core, n) for n in ("dowel_spots", "cut_sockets", "dowel_mesh", "repair", "voxel_remesh", "light_repair")))
-check("full version link is a Gumroad URL", bl.ops.FULL_URL.startswith("https://quadfix.gumroad.com/"))
+check("full version link is a Gumroad URL", bl.ops.FULL_URL.startswith("https://mendbox.gumroad.com/"))
 man = open(os.path.join(ROOT, "bedsplit_lite", "blender_manifest.toml")).read()
-check("manifest: id, version, licence", all(s in man for s in ('id = "bedsplit_lite"', 'version = "1.0.0"', "GPL-3.0-or-later")))
+check("manifest: id, version, licence", all(s in man for s in ('id = "bedsplit_lite"', 'version = "1.0.1"', "GPL-3.0-or-later")))
 
 # ---------------------------------------------------------------- B: cube in metres, automatic
 cube = add_cube(0.3)

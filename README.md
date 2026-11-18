@@ -6,7 +6,7 @@ Website: https://mendboxstudio.com/addons/bedsplit · Full manual: https://mendb
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/license-GPL--3.0--or--later-blue)](LICENSE)
 [![Latest release](https://img.shields.io/github/v/release/mendbox/bedsplit-lite)](https://github.com/mendbox/bedsplit-lite/releases/latest)
 
-**Full version — dowels and sockets in every joint, mesh repair for broken scans and AI meshes, Find Cuts, movable cut planes with live preview, plus everything in Lite → [Gumroad](https://quadfix.gumroad.com/l/bedsplit) | [Superhive](https://superhivemarket.com/products/bedsplit)**
+**Full version — dowels and sockets in every joint, mesh repair for broken scans and AI meshes, Find Cuts, movable cut planes with live preview, plus everything in Lite → [Gumroad](https://mendbox.gumroad.com/l/bedsplit) | [Superhive](https://superhivemarket.com/products/bedsplit)**
 
 BedSplit Lite is a free, open-source Blender add-on that splits a model for 3D printing so that every part fits your printer bed. Pick your printer (Bambu Lab, Prusa, Creality, Anycubic, Elegoo, Sovol, Voron) or type a bed size, press **Split to Bed**, get flat-cut, closed parts laid out next to the model, and export one STL per part. For Blender 4.2 LTS, 4.5 LTS and 5.x.
 
@@ -38,7 +38,7 @@ BedSplit Lite is a free, open-source Blender add-on that splits a model for 3D p
 | **Find Cuts and movable cut planes** (see them in the viewport, move, add, remove) | no, automatic cuts only | yes |
 | Dowel size, depth and clearance settings | no | yes |
 
-Lite stays free and complete for everything marked "yes". Get the full version on [Gumroad](https://quadfix.gumroad.com/l/bedsplit) or [Superhive](https://superhivemarket.com/products/bedsplit).
+Lite stays free and complete for everything marked "yes". Get the full version on [Gumroad](https://mendbox.gumroad.com/l/bedsplit) or [Superhive](https://superhivemarket.com/products/bedsplit).
 
 ## Gallery (Lite features)
 
@@ -97,7 +97,7 @@ Blender's Bisect tool and the Boolean modifier cut one plane at a time and do no
 Yes. The presets use the printable volume of each printer (for example 256 × 256 × 256 mm for the Bambu Lab A1, P1 and X1). Choose **Custom size** for any other printer.
 
 ### Can it add dowels or alignment pins?
-Not in Lite. Dowels and sockets are in the full version: [Gumroad](https://quadfix.gumroad.com/l/bedsplit) | [Superhive](https://superhivemarket.com/products/bedsplit). In Lite the parts have flat joints, so glue them.
+Not in Lite. Dowels and sockets are in the full version: [Gumroad](https://mendbox.gumroad.com/l/bedsplit) | [Superhive](https://superhivemarket.com/products/bedsplit). In Lite the parts have flat joints, so glue them.
 
 ### Why does Lite say my mesh is not watertight?
 Lite splits closed meshes only, and it will not change your geometry. If the mesh has holes, flipped normals or non-manifold edges, it stops and tells you. Fix the mesh first (for example with Blender's 3D-Print Toolbox) or use the full version, which repairs holes, normals and overlapping shells before the cut. AI-generated meshes (Meshy, Tripo, Hunyuan) usually need that repair.

@@ -12,7 +12,7 @@ from . import core
 
 GAP_MM = 15.0   # distance between the parts laid out next to the source
 MAX_PARTS = 64  # more parts than this means a wrong scale, not a real job
-FULL_URL = "https://quadfix.gumroad.com/l/bedsplit"
+FULL_URL = "https://mendbox.gumroad.com/l/bedsplit"
 
 
 # ---------------------------------------------------------------- settings
