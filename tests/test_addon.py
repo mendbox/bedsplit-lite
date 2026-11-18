@@ -98,7 +98,7 @@ check("no preview / cut operators", not any(hasattr(bpy.types, "BEDSPLITLITE_OT_
 check("no dowel / repair code in core", not any(hasattr(core, n) for n in ("dowel_spots", "cut_sockets", "dowel_mesh", "repair", "voxel_remesh", "light_repair")))
 check("full version link is a Gumroad URL", bl.ops.FULL_URL.startswith("https://mendbox.gumroad.com/"))
 man = open(os.path.join(ROOT, "bedsplit_lite", "blender_manifest.toml")).read()
-check("manifest: id, version, licence", all(s in man for s in ('id = "bedsplit_lite"', 'version = "1.0.1"', "GPL-3.0-or-later")))
+check("manifest: id, version, licence", all(s in man for s in ('id = "bedsplit_lite"', 'version = "1.0.2"', "GPL-3.0-or-later")))
 
 # ---------------------------------------------------------------- B: cube in metres, automatic
 cube = add_cube(0.3)
@@ -233,6 +233,21 @@ r = run(bpy.ops.bedsplit_lite.split)
 parts = parts_of(p)
 check("glb parent: split", r == {"FINISHED"} and len(parts) >= 2 and all(fits(list(o.dimensions * 1000.0), bed) for o in parts), str(r))
 check("after split: source still active", bl.ops.target(bpy.context) == kid)
+
+# write_stl tessellates a concave n-gon (L shape, area 3) without folding: the signed triangle areas add up to the area
+bm = bmesh.new()
+lv = [bm.verts.new(c) for c in ((0, 0, 0), (2, 0, 0), (2, 1, 0), (1, 1, 0), (1, 2, 0), (0, 2, 0))]
+bm.faces.new(lv)
+core.write_stl(bm, os.path.join(OUT, "lshape.stl"))
+bm.free()
+raw = open(os.path.join(OUT, "lshape.stl"), "rb").read()
+nt = struct.unpack("<I", raw[80:84])[0]
+area = 0.0
+for i in range(nt):
+    f = struct.unpack("<12fH", raw[84 + 50 * i:134 + 50 * i])
+    a, b, c = f[3:6], f[6:9], f[9:12]
+    area += ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2.0
+check("write_stl: concave n-gon is tessellated, not fanned", nt == 4 and abs(area - 3.0) < 1e-4, "tris %d area %.3f" % (nt, area))
 
 bl.unregister()
 check("unregister", not hasattr(bpy.types.Scene, "bedsplit_lite"))

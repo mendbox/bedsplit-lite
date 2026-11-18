@@ -289,34 +289,43 @@ def heal_part(bm):
 
 # ---------------------------------------------------------------- checks / export
 
-def lay_flat(bm, idx, edges, bed, keys=None):
-    """Turn the part so its largest cut face lies on the bed, then move it to z = 0 over the origin.
-    Returns the chosen side as (axis, sign) or None when no cut side fits the bed.
-    keys: dovetail keys of the part as (kind, axis, sign, slide axis). A face with a tail cannot lie on the bed, and
-    a tail must print without support: pointing up, or with its slide axis upright (its ends are cut at 45 degrees).
-    When no cut face allows that the part stays as it stands in the model, where both hold."""
+def lay_side(bm, idx, edges, bed, keys=None, grow=None):
+    """The cut side the part can lie on for printing, the largest first: (axis, sign), or None when there is none.
+    keys: dovetail keys of the part as tuples that start with (kind, axis, sign, slide axis). A face with a tail
+    cannot lie on the bed, and a key in a side wall (tail or socket) prints without support only with its slide axis
+    upright: level, the flank of a tail hangs in the air and the lip of a socket is one long bridge.
+    grow: what the tails add to the size of bm per axis, when bm is the part before its tails are joined."""
+    lo, hi = bounds(bm)
+    size = list(hi - lo)
+    if grow:
+        size = [size[a] + grow[a] for a in range(3)]
     best = None
     for ax in range(3):
-        for sign, k in ((-1.0, idx[ax]), (1.0, idx[ax] + 1)):
-            if k == 0 or k == len(edges[ax]) - 1:
+        for sign, n in ((-1.0, idx[ax]), (1.0, idx[ax] + 1)):
+            if n == 0 or n == len(edges[ax]) - 1:
                 continue
-            pos = edges[ax][k]
+            if keys:
+                if any(q[0] == "tail" and (q[1], q[2]) == (ax, sign) for q in keys):
+                    continue
+                if any(q[1] != ax and q[3] != ax for q in keys):
+                    continue
+            pos = edges[ax][n]
             area = sum(f.calc_area() for f in bm.faces
                        if abs(f.normal[ax]) > 0.999 and all(abs(v.co[ax] - pos) < 1e-3 for v in f.verts))
-            lo, hi = bounds(bm)
-            size = list(hi - lo)
             other = [size[a] for a in range(3) if a != ax]
             fits = size[ax] <= bed[2] and (
                 (other[0] <= bed[0] and other[1] <= bed[1]) or (other[1] <= bed[0] and other[0] <= bed[1]))
-            rank = (0, area)
-            if keys:
-                tails = [k for k in keys if k[0] == "tail"]
-                if any((k[1], k[2]) == (ax, sign) or (k[1] != ax and k[3] != ax) for k in tails):
-                    continue
-                # a socket in a side wall with a level slide axis has a long roof: second choice
-                rank = (-sum(1 for k in keys if k[0] == "socket" and k[1] != ax and k[3] != ax), area)
-            if area > 0 and fits and (best is None or rank > best[0]):
-                best = (rank, ax, sign)
+            if area > 0 and fits and (best is None or area > best[0]):
+                best = (area, ax, sign)
+    return (best[1], best[2]) if best else None
+
+
+def lay_flat(bm, idx, edges, bed, keys=None):
+    """Turn the part so its largest cut face lies on the bed, then move it to z = 0 over the origin.
+    Returns the chosen side as (axis, sign) or None when no cut side fits the bed or the keys allow none (see
+    lay_side): then the part stays as it stands in the model, where a tail points up or runs upright."""
+    side = lay_side(bm, idx, edges, bed, keys)
+    best = (None,) + side if side else None
     if best:
         normal = AXES[best[1]] * best[2]
         rot = normal.rotation_difference(Vector((0, 0, -1))).to_matrix().to_4x4()
@@ -332,13 +341,10 @@ def lay_flat(bm, idx, edges, bed, keys=None):
 
 
 def write_stl(bm, path):
-    """Binary STL, triangles as they are in bm (n-gons as a fan). No scene access, safe to call from an operator."""
+    """Binary STL. N-gons are tessellated: a cut face can be concave, and a plain fan would fold over itself there
+    (the slicer then sees phantom overhangs). No scene access, safe to call from an operator."""
     bm.normal_update()
-    tris = []
-    for f in bm.faces:
-        co = [v.co for v in f.verts]
-        for i in range(1, len(co) - 1):
-            tris.append((f.normal, co[0], co[i], co[i + 1]))
+    tris = [(tri[0].face.normal, tri[0].vert.co, tri[1].vert.co, tri[2].vert.co) for tri in bm.calc_loop_triangles()]
     with open(path, "wb") as fh:
         fh.write(b"BedSplit".ljust(80, b" "))
         fh.write(struct.pack("<I", len(tris)))
@@ -412,12 +418,17 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
     bm.faces.ensure_lookup_table()
     src_tree = BVHTree.FromBMesh(bm)
     # a cut through touching contours can leave a non-manifold edge: move the planes a little and cut again
-    for attempt in range(5):
-        planes = [[p + 0.731 * attempt for p in ps] for ps in base_planes]
-        res["attempts"] = attempt + 1
-        res["planes"] = [[round(p, 2) for p in ps] for ps in planes]
-        cells, edges = make_cells(bm, lo, hi, planes)
-        res["t_cut"] = round(time.time() - t0, 2)
+    attempt = 0
+    cut_at = None
+    to_dowels = set()   # cuts (axis, number) whose keys gave way to dowels
+    while True:
+        if cut_at != attempt:
+            planes = [[p + 0.731 * attempt for p in ps] for ps in base_planes]
+            res["attempts"] = attempt + 1
+            res["planes"] = [[round(p, 2) for p in ps] for ps in planes]
+            cells, edges = make_cells(bm, lo, hi, planes)
+            res["t_cut"] = round(time.time() - t0, 2)
+            cut_at = attempt
 
         keys = []
         key_sides = {}
@@ -448,11 +459,11 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
         # a socket that the boolean left as a separate shell inside the part shows up as an extra body
         sockets_open = all(len(islands(p)) <= bodies[idx] for idx, p in parts.items())
         res["sockets_open"] = sockets_open
-        if sockets_open and all(is_closed(p) for p in parts.values()):
+        if (sockets_open and all(is_closed(p) for p in parts.values())) or attempt >= 4:
             break
-        if attempt < 4:
-            for p in parts.values():
-                p.free()
+        for p in parts.values():
+            p.free()
+        attempt += 1
 
     # checks
     part_info = []
