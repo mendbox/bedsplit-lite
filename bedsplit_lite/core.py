@@ -165,33 +165,41 @@ def section_stats(bm, co, no):
     return areas
 
 
-def choose_planes(bm, lo, hi, bed):
-    """Per axis: minimal count of slabs, plane positions shifted away from sections too small for a dowel."""
+def choose_planes(bm, lo, hi, bed, tail=0.0):
+    """Per axis: minimal count of slabs, plane positions shifted away from sections too small for a dowel.
+    tail: length a dovetail key adds to every part but the last one of an axis, mm (0 for dowels). The cuts are the
+    same as without keys whenever those leave room for the key; otherwise the axis is cut again with less room."""
     need_r = PEG_R + CLEAR + WALL
     need_area = math.pi * need_r * need_r * 1.5
     planes = []
     for ax in range(3):
         dim = hi[ax] - lo[ax]
-        n = max(1, math.ceil((dim - 1e-6) / bed[ax]))
-        pos = []
-        if n > 1:
-            slab = dim / n
-            d = min((bed[ax] - slab) / 2.0, slab * 0.2)
-            for i in range(1, n):
-                nominal = lo[ax] + slab * i
-                best = None
-                for k in range(-3, 4):
-                    p = nominal + d * k / 3.0 + min(d, 0.137)
-                    co = Vector((0, 0, 0))
-                    co[ax] = p
-                    # a plane through existing vertices gives degenerate cuts
-                    on_plane = sum(1 for vert in bm.verts if abs(vert.co[ax] - p) < 0.02)
-                    areas = section_stats(bm, co, AXES[ax])
-                    small = sum(1 for a in areas if a < need_area)
-                    score = (on_plane, small, len(areas), abs(k))
-                    if best is None or score < best[0]:
-                        best = (score, p)
-                pos.append(best[1])
+        for room in (bed[ax], bed[ax] - tail):
+            n = max(1, math.ceil((dim - 1e-6) / bed[ax]))
+            if n > 1:
+                n = math.ceil((dim - 1e-6) / room)
+            pos = []
+            if n > 1:
+                slab = dim / n
+                d = min((room - slab) / 2.0, slab * 0.2)
+                for i in range(1, n):
+                    nominal = lo[ax] + slab * i
+                    best = None
+                    for k in range(-3, 4):
+                        p = nominal + d * k / 3.0 + min(d, 0.137)
+                        co = Vector((0, 0, 0))
+                        co[ax] = p
+                        # a plane through existing vertices gives degenerate cuts
+                        on_plane = sum(1 for vert in bm.verts if abs(vert.co[ax] - p) < 0.02)
+                        areas = section_stats(bm, co, AXES[ax])
+                        small = sum(1 for a in areas if a < need_area)
+                        score = (on_plane, small, len(areas), abs(k))
+                        if best is None or score < best[0]:
+                            best = (score, p)
+                    pos.append(best[1])
+            stops = [lo[ax]] + pos
+            if tail <= 0.0 or all(b - a + tail <= bed[ax] for a, b in zip(stops, stops[1:])):
+                break
         planes.append(pos)
     return planes
 
@@ -281,9 +289,12 @@ def heal_part(bm):
 
 # ---------------------------------------------------------------- checks / export
 
-def lay_flat(bm, idx, edges, bed):
+def lay_flat(bm, idx, edges, bed, keys=None):
     """Turn the part so its largest cut face lies on the bed, then move it to z = 0 over the origin.
-    Returns the chosen side as (axis, sign) or None when no cut side fits the bed."""
+    Returns the chosen side as (axis, sign) or None when no cut side fits the bed.
+    keys: dovetail keys of the part as (kind, axis, sign, slide axis). A face with a tail cannot lie on the bed, and
+    a tail must print without support: pointing up, or with its slide axis upright (its ends are cut at 45 degrees).
+    When no cut face allows that the part stays as it stands in the model, where both hold."""
     best = None
     for ax in range(3):
         for sign, k in ((-1.0, idx[ax]), (1.0, idx[ax] + 1)):
@@ -297,8 +308,15 @@ def lay_flat(bm, idx, edges, bed):
             other = [size[a] for a in range(3) if a != ax]
             fits = size[ax] <= bed[2] and (
                 (other[0] <= bed[0] and other[1] <= bed[1]) or (other[1] <= bed[0] and other[0] <= bed[1]))
-            if area > 0 and fits and (best is None or area > best[0]):
-                best = (area, ax, sign)
+            rank = (0, area)
+            if keys:
+                tails = [k for k in keys if k[0] == "tail"]
+                if any((k[1], k[2]) == (ax, sign) or (k[1] != ax and k[3] != ax) for k in tails):
+                    continue
+                # a socket in a side wall with a level slide axis has a long roof: second choice
+                rank = (-sum(1 for k in keys if k[0] == "socket" and k[1] != ax and k[3] != ax), area)
+            if area > 0 and fits and (best is None or rank > best[0]):
+                best = (rank, ax, sign)
     if best:
         normal = AXES[best[1]] * best[2]
         rot = normal.rotation_difference(Vector((0, 0, -1))).to_matrix().to_4x4()
@@ -328,10 +346,10 @@ def write_stl(bm, path):
             fh.write(struct.pack("<12fH", n.x, n.y, n.z, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, 0))
 
 
-def auto_planes(bm, bed):
+def auto_planes(bm, bed, tail=0.0):
     """Cut plane positions per axis for a mesh in mm, without repair (for the preview)."""
     lo, hi = bounds(bm)
-    return choose_planes(bm, lo, hi, [float(x) for x in bed]), lo, hi
+    return choose_planes(bm, lo, hi, [float(x) for x in bed], tail), lo, hi
 
 
 def messages(res):
@@ -353,7 +371,8 @@ def messages(res):
         out.append(("ERROR", "%d part(s) not watertight: move a cut plane and split again" % bad))
     if not res["checks"]["fits_bed"]:
         bad = sum(1 for p in res["parts"] if not p["fits"])
-        out.append(("ERROR", "%d part(s) larger than the bed: add a cut plane" % bad))
+        text = "%d part(s) larger than the bed: add a cut plane" % bad
+        out.append(("ERROR", text))
     if res["joints_without_dowel"]:
         out.append(("WARNING", "%d joint(s) without dowel (wall too thin): glue these" % res["joints_without_dowel"]))
     if not res["checks"]["dowel_fit"]:
@@ -388,7 +407,8 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
     lo, hi = bounds(bm)
     res["size"] = [round(x, 1) for x in (hi - lo)]
     cap_layer(bm)
-    base_planes = [sorted(ps) for ps in planes] if planes is not None else choose_planes(bm, lo, hi, bed)
+    tail = 0.0
+    base_planes = [sorted(ps) for ps in planes] if planes is not None else choose_planes(bm, lo, hi, bed, tail)
     bm.faces.ensure_lookup_table()
     src_tree = BVHTree.FromBMesh(bm)
     # a cut through touching contours can leave a non-manifold edge: move the planes a little and cut again
@@ -399,6 +419,8 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
         cells, edges = make_cells(bm, lo, hi, planes)
         res["t_cut"] = round(time.time() - t0, 2)
 
+        keys = []
+        key_sides = {}
         sockets = {idx: [] for idx in cells}
         dowels = []
         joints = []
@@ -461,7 +483,7 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
     hits = 0
     out = []
     for n, (idx, p) in enumerate(sorted(parts.items())):
-        part_info[n]["down"] = lay_flat(p, idx, edges, bed)
+        part_info[n]["down"] = lay_flat(p, idx, edges, bed, key_sides.get(idx))
         out.append(p)
     bm.free()
     res["dowel_intersections"] = hits
