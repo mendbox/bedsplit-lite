@@ -121,7 +121,7 @@ No. Pure Python with Blender's own `bmesh`, no internet access, no dependencies.
 - Closed (watertight) meshes only. Lite does not repair anything.
 - No dowels, pins or other joints, the parts have flat faces to glue.
 - Solid parts only: no hollowing, no supports, no 3MF.
-- Tested on macOS; it should work on Windows and Linux, reports welcome.
+- Tested on macOS and Windows 11 (x86-64); it should also work on Linux, reports welcome.
 
 ## Development
 
