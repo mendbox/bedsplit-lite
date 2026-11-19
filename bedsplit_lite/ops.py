@@ -195,6 +195,7 @@ class BEDSPLITLITE_OT_split(Operator):
         y0 = (lo.y + hi.y) / 2.0 + pitch * (cols - 1) / 2.0
         made = []
         info = []
+        sound = bool(res["checks"]["volume"])   # the parts together have the volume of the model
         palette = part_materials()
         for n, part in enumerate(parts):
             plo, phi = sizes[n]
@@ -211,19 +212,22 @@ class BEDSPLITLITE_OT_split(Operator):
             made.append(o)
             src = res["parts"][n]
             fits = psize.x <= bed[0] + 1e-3 and psize.y <= bed[1] + 1e-3 and psize.z <= bed[2] + 1e-3
-            info.append({"size": [round(c, 1) for c in psize], "fits": bool(fits or src["fits"]), "closed": bool(src["closed"])})
+            info.append({"size": [round(c, 1) for c in psize], "fits": bool(fits or src["fits"]), "closed": bool(src["closed"]),
+                         "ok": bool((fits or src["fits"]) and src["closed"] and sound)})
         for o in context.selected_objects:
             o.select_set(False)
         for o in made:
             o.select_set(True)
         context.view_layer.objects.active = ob   # keep the panel on the source for the next split
 
-        ok = res["checks"]["closed"] and res["checks"]["fits_bed"]
+        ok = res["checks"]["closed"] and res["checks"]["fits_bed"] and sound
         p.result_collection = coll.name
         p.report = json.dumps({"source": ob.name, "n_parts": len(parts), "time_s": res["time_s"], "ok": bool(ok),
                                "messages": [m for m in res["messages"] if m[0] != "INFO"], "parts": info})
         _redraw(p, context)
-        self.report({"INFO" if ok else "WARNING"}, "BedSplit Lite: %d parts" % len(parts))
+        notes = [m[1] for m in res["messages"] if m[0] != "INFO"]
+        level = "INFO" if ok else "WARNING" if sound and res["checks"]["closed"] else "ERROR"
+        self.report({level}, "BedSplit Lite: %d parts" % len(parts) + (". " + "; ".join(notes) if notes else ""))
         return {"FINISHED"}
 
 

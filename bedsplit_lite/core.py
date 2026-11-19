@@ -18,6 +18,10 @@ PEG_HALF = 6.0     # dowel half length (depth in each part)
 CLEAR = 0.2        # clearance, radial and at the socket bottom
 WALL = 1.6         # minimum wall around a socket
 SHAPE_TOL = 0.5      # 99% of the repaired surface must stay this close to the source, mm
+PLANE_SNAP = 1e-3    # a vertex this close to a cut plane is put on the plane before the cut, mm
+PLANE_CLEAR = 0.01   # a cut plane keeps this far from every vertex of the model, mm
+PLANE_STEP = 0.02    # ... by moving in steps of this size, mm
+VOLUME_TOL = 1.0     # the parts together must have the volume of the model within this, percent
 # printable volume in mm (x, y, z)
 PRINTERS = {
     "Bambu Lab A1 mini": (180, 180, 180),
@@ -85,6 +89,34 @@ def islands(bm):
     return out
 
 
+def orient_nested(bm):
+    """recalc_face_normals turns every shell outward; a shell inside another one is a cavity and must face inward."""
+    comps = islands(bm)
+    if len(comps) < 2:
+        return
+    bm.faces.ensure_lookup_table()
+    owner = {}
+    for i, comp in enumerate(comps):
+        for f in comp:
+            owner[f.index] = i
+    tree = BVHTree.FromBMesh(bm, epsilon=0.0)
+    direction = Vector((0.5377, 0.2713, 0.7982)).normalized()
+    for i, comp in enumerate(comps):
+        origin = comp[0].calc_center_median()
+        crossings = 0
+        pos = origin
+        for _ in range(10000):
+            hit = tree.ray_cast(pos, direction)
+            if hit[0] is None:
+                break
+            if owner[hit[2]] != i:
+                crossings += 1
+            pos = hit[0] + direction * 1e-4
+        if crossings % 2 == 1:
+            for f in comp:
+                f.normal_flip()
+
+
 VOXEL_FACES = 600000
 VOXELS = (0.8, 1.15, 1.6, 2.4, 3.2)   # mm
 
@@ -110,16 +142,43 @@ def cap_layer(bm):
     return bm.faces.layers.int.get("cap") or bm.faces.layers.int.new("cap")
 
 
-def cut_keep(bm, co, no, pid):
-    """Keep the half space on the negative side of (co, no); cap the cut; tag caps with pid."""
-    lay = cap_layer(bm)
+def plane_axis(no):
+    return max(range(3), key=lambda a: abs(no[a]))
+
+
+def bisect_keep(bm, co, no, snap=True):
+    """Cut by an axis-aligned plane and keep the negative side. Returns the open edges of the cut.
+    snap: vertices that sit on the plane up to float noise are put on it first. Left alone, some of them fall inside
+    the bisect tolerance and some outside, the cut outline comes out in pieces and the cap is lost."""
+    if snap:
+        ax = plane_axis(no)
+        pos = co[ax]
+        for v in bm.verts:
+            if abs(v.co[ax] - pos) < PLANE_SNAP:
+                v.co[ax] = pos
     geom = list(bm.verts) + list(bm.edges) + list(bm.faces)
     res = bmesh.ops.bisect_plane(bm, geom=geom, dist=1e-5, plane_co=co, plane_no=no,
                                  clear_outer=True, clear_inner=False)
+    # every open edge between two vertices of the cut belongs to it, whether the bisect made the edge or it was an
+    # edge of the model that lies in the plane (the bisect does not list all of those)
+    cut = [v for v in res["geom_cut"] if isinstance(v, bmesh.types.BMVert) and v.is_valid]
+    on = set(cut)
+    seen = set()
+    edges = []
+    for v in cut:
+        for e in v.link_edges:
+            if e not in seen and len(e.link_faces) == 1 and e.other_vert(v) in on:
+                seen.add(e)
+                edges.append(e)
+    return edges
+
+
+def cut_keep(bm, co, no, pid):
+    """Keep the half space on the negative side of (co, no); cap the cut; tag caps with pid."""
+    lay = cap_layer(bm)
+    edges = bisect_keep(bm, co, no)
     if not bm.faces:
         return False
-    edges = [e for e in res["geom_cut"] if isinstance(e, bmesh.types.BMEdge)
-             and e.is_valid and len(e.link_faces) == 1]
     if edges:
         fill = bmesh.ops.triangle_fill(bm, use_beauty=True, use_dissolve=False,
                                        edges=edges, normal=no)
@@ -132,14 +191,46 @@ def cut_keep(bm, co, no, pid):
     return True
 
 
+def clear_planes(bm, lo, hi, planes, bed, tail=0.0):
+    """Cut positions moved off the vertices of the model: a plane through vertices, edges or a flat face of the
+    model gives a degenerate cut. The move is a few hundredths of a millimetre and never makes a slab that fitted
+    the bed too long for it (tail: room a dovetail key needs on every slab but the last); when no such move exists the
+    plane stays (the cut then snaps the vertices to it)."""
+    out = []
+    for ax in range(3):
+        ps = list(planes[ax])
+        for n, p in enumerate(ps):
+            near = {round(d, 4) for d in (v.co[ax] - p for v in bm.verts) if abs(d) < 1.0}
+            if not any(abs(d) < PLANE_CLEAR for d in near):
+                continue
+            below = ps[n - 1] if n > 0 else lo[ax]
+            above = planes[ax][n + 1] if n + 1 < len(ps) else hi[ax]
+            lim_below = bed[ax] - tail + 1e-3
+            lim_above = bed[ax] - (tail if n + 1 < len(ps) else 0.0) + 1e-3
+            for k in range(1, 26):
+                done = False
+                for shift in (PLANE_STEP * k, -PLANE_STEP * k):
+                    q = p + shift
+                    if any(abs(d - shift) < PLANE_CLEAR for d in near):
+                        continue
+                    if (q - below > lim_below - 2e-3 and p - below <= lim_below) or (
+                            above - q > lim_above - 2e-3 and above - p <= lim_above):
+                        continue
+                    if not below + 0.25 < q < above - 0.25:
+                        continue
+                    ps[n] = q
+                    done = True
+                    break
+                if done:
+                    break
+        out.append(ps)
+    return out
+
+
 def section_stats(bm, co, no):
     """Cross-section of bm at the plane: list of island areas."""
     tmp = bm.copy()
-    geom = list(tmp.verts) + list(tmp.edges) + list(tmp.faces)
-    res = bmesh.ops.bisect_plane(tmp, geom=geom, dist=1e-5, plane_co=co, plane_no=no,
-                                 clear_outer=True, clear_inner=False)
-    edges = [e for e in res["geom_cut"] if isinstance(e, bmesh.types.BMEdge)
-             and e.is_valid and len(e.link_faces) == 1]
+    edges = bisect_keep(tmp, co, no, snap=False)
     areas = []
     if edges:
         fill = bmesh.ops.triangle_fill(tmp, use_beauty=False, use_dissolve=False,
@@ -352,6 +443,19 @@ def write_stl(bm, path):
             fh.write(struct.pack("<12fH", n.x, n.y, n.z, a.x, a.y, a.z, b.x, b.y, b.z, c.x, c.y, c.z, 0))
 
 
+def joint_volume(dowels, keys):
+    """Volume the joints take out of the parts: none in Lite, the cuts are flat."""
+    vol = 0.0
+    return vol
+
+
+def volume_error(parts, joints_vol, vol_src):
+    """How far the parts together are from the volume of the model, percent."""
+    if not vol_src:
+        return None
+    return 100.0 * abs(sum(abs(p.calc_volume()) for p in parts) + joints_vol - vol_src) / vol_src
+
+
 def auto_planes(bm, bed, tail=0.0):
     """Cut plane positions per axis for a mesh in mm, without repair (for the preview)."""
     lo, hi = bounds(bm)
@@ -375,6 +479,9 @@ def messages(res):
     if not res["checks"]["closed"]:
         bad = sum(1 for p in res["parts"] if not p["closed"])
         out.append(("ERROR", "%d part(s) not watertight: move a cut plane and split again" % bad))
+    if res["checks"]["closed"] and not res["checks"]["volume"]:
+        out.append(("ERROR", "The parts do not add up to the model (%.1f%% of its volume is off): move a cut plane "
+                    "and split again" % (res["volume_err_pct"] or 0.0)))
     if not res["checks"]["fits_bed"]:
         bad = sum(1 for p in res["parts"] if not p["fits"])
         text = "%d part(s) larger than the bed: add a cut plane" % bad
@@ -417,13 +524,14 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
     base_planes = [sorted(ps) for ps in planes] if planes is not None else choose_planes(bm, lo, hi, bed, tail)
     bm.faces.ensure_lookup_table()
     src_tree = BVHTree.FromBMesh(bm)
-    # a cut through touching contours can leave a non-manifold edge: move the planes a little and cut again
+    # a cut through touching contours can leave a non-manifold edge, and a part that was healed can come out closed
+    # with a piece missing: move the planes a little and cut again
     attempt = 0
     cut_at = None
     to_dowels = set()   # cuts (axis, number) whose keys gave way to dowels
     while True:
         if cut_at != attempt:
-            planes = [[p + 0.731 * attempt for p in ps] for ps in base_planes]
+            planes = clear_planes(bm, lo, hi, [[p + 0.731 * attempt for p in ps] for ps in base_planes], bed, tail)
             res["attempts"] = attempt + 1
             res["planes"] = [[round(p, 2) for p in ps] for ps in planes]
             cells, edges = make_cells(bm, lo, hi, planes)
@@ -455,11 +563,15 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
             if not is_closed(p):
                 p.verts.index_update()
                 healed += 1 if heal_part(p) else 0
+            # a cavity that no plane cut is a shell inside the part: it faces inward and takes volume away
+            orient_nested(p)
         res["parts_healed"] = healed
         # a socket that the boolean left as a separate shell inside the part shows up as an extra body
         sockets_open = all(len(islands(p)) <= bodies[idx] for idx, p in parts.items())
         res["sockets_open"] = sockets_open
-        if (sockets_open and all(is_closed(p) for p in parts.values())) or attempt >= 4:
+        err = volume_error(parts.values(), joint_volume(dowels, keys), vol_src)
+        sound = err is None or err <= VOLUME_TOL or not res["closed_after_repair"]
+        if (sockets_open and sound and all(is_closed(p) for p in parts.values())) or attempt >= 4:
             break
         for p in parts.values():
             p.free()
@@ -483,12 +595,12 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
         part_info.append({"cell": idx, "closed": closed, "defects": defects(p), "volume": round(vol, 1),
                           "size": [round(x, 1) for x in size], "fits": fit,
                           "bodies": len(islands(p)), "sockets": len(sockets[idx])})
-    socket_vol = 0.0
     res["parts"] = part_info
     res["n_parts"] = len(parts)
     res["volume_parts"] = round(vol_sum, 1)
-    res["volume_sockets"] = round(socket_vol, 1)
-    res["volume_err_pct"] = round(100.0 * abs(vol_sum + socket_vol - vol_src) / vol_src, 4) if vol_src else None
+    res["volume_sockets"] = 0.0
+    err = volume_error(parts.values(), joint_volume(dowels, keys), vol_src)
+    res["volume_err_pct"] = round(err, 4) if err is not None else None
 
     gap_min = None
     hits = 0
@@ -504,7 +616,7 @@ def split_mesh(bm, bed=(220.0, 220.0, 250.0), planes=None):
     res["checks"] = {
         "closed": all_closed and res["closed_after_repair"],
         "fits_bed": all_fit,
-        "volume": res["volume_err_pct"] is not None and res["volume_err_pct"] <= 1.0,
+        "volume": res["volume_err_pct"] is not None and res["volume_err_pct"] <= VOLUME_TOL,
         "dowel_fit": hits == 0 and gap_ok,
         "shape": res["repair_dev_p99"] is not None and res["repair_dev_p99"] <= SHAPE_TOL,
         "time": res["time_s"] <= 30.0,

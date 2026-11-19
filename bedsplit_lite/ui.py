@@ -104,7 +104,7 @@ class BEDSPLITLITE_PT_result(Panel):
             wrapped(col, context, text, ICONS.get(level, "INFO"))
         box = layout.box()
         for n, part in enumerate(rep["parts"]):
-            ok = part["fits"] and part["closed"]
+            ok = part.get("ok", part["fits"] and part["closed"])
             box.label(text="Part %d: %s mm" % (n + 1, mm(part["size"])), icon="CHECKMARK" if ok else "CANCEL")
         row = layout.row()
         row.scale_y = 1.4

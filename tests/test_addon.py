@@ -11,6 +11,8 @@ import sys
 
 import bpy
 import bmesh
+import math
+from mathutils import Matrix, Vector
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 sys.path.insert(0, ROOT)
@@ -98,7 +100,7 @@ check("no preview / cut operators", not any(hasattr(bpy.types, "BEDSPLITLITE_OT_
 check("no dowel / repair code in core", not any(hasattr(core, n) for n in ("dowel_spots", "cut_sockets", "dowel_mesh", "repair", "voxel_remesh", "light_repair")))
 check("full version link is a Gumroad URL", bl.ops.FULL_URL.startswith("https://mendbox.gumroad.com/"))
 man = open(os.path.join(ROOT, "bedsplit_lite", "blender_manifest.toml")).read()
-check("manifest: id, version, licence", all(s in man for s in ('id = "bedsplit_lite"', 'version = "1.0.2"', "GPL-3.0-or-later")))
+check("manifest: id, version, licence", all(s in man for s in ('id = "bedsplit_lite"', 'version = "1.0.3"', "GPL-3.0-or-later")))
 
 # ---------------------------------------------------------------- B: cube in metres, automatic
 cube = add_cube(0.3)
@@ -248,6 +250,91 @@ for i in range(nt):
     a, b, c = f[3:6], f[6:9], f[9:12]
     area += ((b[0] - a[0]) * (c[1] - a[1]) - (c[0] - a[0]) * (b[1] - a[1])) / 2.0
 check("write_stl: concave n-gon is tessellated, not fanned", nt == 4 and abs(area - 3.0) < 1e-4, "tris %d area %.3f" % (nt, area))
+
+# ---------------------------------------------------------------- cuts exactly through vertices and edges (1.0.3)
+def exact_cut(name, bm, planes, n_parts):
+    """Cuts at the given positions, which pass through vertices or edges of the mesh (in mm, starting at 0)."""
+    full = abs(bm.calc_volume())
+    parts, res = core.split_mesh(bm, (220.0, 220.0, 250.0), planes)
+    got = sum(abs(q.calc_volume()) for q in parts)
+    for n, q in enumerate(parts):
+        core.write_stl(q, os.path.join(OUT, "exact_%s_part_%02d.stl" % (name.split()[0], n)))
+    check("%s: %d sound parts" % (name, n_parts), len(parts) == n_parts and res["pass_blender"] and abs(got - full) / full < 1e-4
+          and all(core.is_closed(q) for q in parts) and not any(m[0] == "ERROR" for m in res["messages"]),
+          "parts %d volume %.5f failed %s" % (len(parts), got / full, [k for k, v in res["checks"].items() if not v]))
+    for q in parts:
+        q.free()
+
+
+def at_zero(bm):
+    lo, hi = core.bounds(bm)
+    for v in bm.verts:
+        v.co = v.co - lo
+    return bm
+
+
+sphere = bmesh.new()
+bmesh.ops.create_uvsphere(sphere, u_segments=32, v_segments=16, radius=200.0)
+for v in sphere.verts:
+    v.co = v.co + Vector((200.0, 200.0, 200.0))   # leaves float noise on the rings of vertices in the mid planes
+noise = max(abs(v.co.x - 200.0) for v in sphere.verts if abs(v.co.x - 200.0) < 0.01)
+full = abs(sphere.calc_volume())
+got = 0.0
+closed = True
+for sx in (1.0, -1.0):
+    for sy in (1.0, -1.0):
+        c = sphere.copy()
+        core.cut_keep(c, Vector((200.0, 0.0, 0.0)), core.AXES[0] * sx, int(sx))
+        core.cut_keep(c, Vector((0.0, 200.0, 0.0)), core.AXES[1] * sy, int(sy) * 1001)
+        bmesh.ops.recalc_face_normals(c, faces=c.faces)
+        closed = closed and core.is_closed(c)
+        got += abs(c.calc_volume())
+        c.free()
+check("cut_keep: plane through noisy vertices is capped", closed and abs(got - full) / full < 1e-4 and noise > 1e-5,
+      "closed %s volume %.5f noise %.1e" % (closed, got / full, noise))
+exact_cut("sphere 200/200/200", sphere, [[200.0], [200.0], [200.0]], 8)
+cube = bmesh.new()
+bmesh.ops.create_cube(cube, size=240.0)
+bmesh.ops.rotate(cube, verts=cube.verts, matrix=Matrix.Rotation(math.pi / 4.0, 3, "Z"))
+at_zero(cube)
+half = core.bounds(cube)[1].x / 2.0
+exact_cut("cube through its vertices", cube, [[half], [half], []], 4)
+cube = bmesh.new()
+bmesh.ops.create_cube(cube, size=300.0)
+bmesh.ops.subdivide_edges(cube, edges=cube.edges, cuts=3, use_grid_fill=True)
+at_zero(cube)
+exact_cut("loops: cube through an edge loop", cube, [[150.0], [150.0], [150.0]], 8)
+
+# a cavity inside one part (no plane cuts it) is not a volume loss
+bm = bmesh.new()
+bmesh.ops.create_cube(bm, size=400.0)
+bmesh.ops.translate(bm, verts=bm.verts, vec=(200.0, 200.0, 200.0))
+inner = bmesh.ops.create_icosphere(bm, subdivisions=3, radius=60.0)
+bmesh.ops.translate(bm, verts=inner["verts"], vec=(300.0, 300.0, 300.0))
+for f in {f for v in inner["verts"] for f in v.link_faces}:
+    f.normal_flip()
+parts, res = core.split_mesh(bm, (220.0, 220.0, 250.0), [[200.0], [200.0], [200.0]])
+check("cavity inside a part: volume adds up", res["pass_blender"] and res["attempts"] == 1 and res["volume_err_pct"] < 0.01,
+      "error %s attempts %s" % (res["volume_err_pct"], res["attempts"]))
+for q in parts:
+    q.free()
+
+# a result that lost volume must not pass: error in the report, no check marks
+p = reset()
+cube = add_cube(0.3)
+real_error = core.volume_error
+core.volume_error = lambda parts, joints_vol, vol_src: 37.0
+try:
+    r = run(bpy.ops.bedsplit_lite.split)
+finally:
+    core.volume_error = real_error
+rep = json.loads(p.report) if p.report else {}
+check("volume loss: result is not ok, error shown", "do not add up" in str(r) and rep and not rep["ok"] and not any(q["ok"] for q in rep["parts"])
+      and any(m[0] == "ERROR" and "do not add up" in m[1] for m in rep["messages"]) and len(parts_of(p)) == 8, "%s %s" % (r, rep.get("messages")))
+activate(cube)
+r = run(bpy.ops.bedsplit_lite.split)
+rep = json.loads(p.report)
+check("sound result: ok, check marks", r == {"FINISHED"} and rep["ok"] and all(q["ok"] for q in rep["parts"]))
 
 bl.unregister()
 check("unregister", not hasattr(bpy.types.Scene, "bedsplit_lite"))

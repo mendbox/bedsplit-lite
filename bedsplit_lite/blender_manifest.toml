@@ -1,6 +1,6 @@
 schema_version = "1.0.0"
 id = "bedsplit_lite"
-version = "1.0.2"
+version = "1.0.3"
 name = "BedSplit Lite - Split Models to Fit the 3D Printer Bed"
 tagline = "Split a model to the printer bed, flat cuts, STL per part"
 maintainer = "Mendbox Studio"
